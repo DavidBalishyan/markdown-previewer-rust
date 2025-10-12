@@ -1,14 +1,14 @@
 use axum::{
+    Router,
     extract::{Path, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::get,
-    Router,
 };
 use clap::Parser;
 use mime_guess::from_path;
-use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
-use pulldown_cmark::{html, Options, Parser as MdParser};
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
+use pulldown_cmark::{Options, Parser as MdParser, html};
 use std::{
     cmp::Ordering,
     fmt::Write as _,
@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::fs;
 use tracing::{error, info};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 const URL_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b' ')
@@ -44,7 +44,6 @@ struct Args {
     root: PathBuf,
 
     /// Address to bind (default: 127.0.0.1:3000)
-    // #[arg(short = 'a', long, default_value = "127.0.0.1:3000")]
     #[arg(short = 'a', long, default_value = "0.0.0.0:3000")]
     addr: String,
 }
@@ -87,7 +86,9 @@ async fn handle_any(State(state): State<AppState>, Path(path): Path<String>) -> 
     let decoded = percent_decode_str(&path).decode_utf8_lossy().to_string();
 
     match map_request_path_to_fs(&state, &decoded).await {
-        Ok(MappedPath { fs_path, is_dir }) if is_dir => directory_listing_html(&state, fs_path).await,
+        Ok(MappedPath { fs_path, is_dir }) if is_dir => {
+            directory_listing_html(&state, fs_path).await
+        }
         Ok(MappedPath { fs_path, .. }) => serve_file_or_markdown(&state, fs_path).await,
         Err(MapError::NotFound) => error_page(StatusCode::NOT_FOUND, "Not Found"),
         Err(MapError::Forbidden) => error_page(StatusCode::FORBIDDEN, "Forbidden"),
@@ -191,13 +192,17 @@ async fn directory_listing_html(state: &AppState, fs_dir: PathBuf) -> Response {
         );
     }
 
-    let title = if rel.is_empty() { "/".to_string() } else { format!("/{rel}") };
+    let title = if rel.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{rel}")
+    };
 
     Html(format!(
         r#"<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Index of {}</title>
+<title>md.rs | Index of {}</title>
 <style>
   :root {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }}
   body {{ margin: 0; background:#0b0d12; color:#e5e7eb; }}
@@ -213,14 +218,13 @@ async fn directory_listing_html(state: &AppState, fs_dir: PathBuf) -> Response {
 </style>
 </head>
 <body>
-<header><h1>Index of {}</h1></header>
+<header><h1>md.rs</h1></header>
 <main>
   <ul>{}</ul>
   <div class="footer">Markdown files render when clicked. Other files download or display raw.</div>
 </main>
 </body>
 </html>"#,
-        html_escape(&title),
         html_escape(&title),
         list_html
     ))
@@ -238,8 +242,11 @@ async fn serve_file_or_markdown(_state: &AppState, fs_path: PathBuf) -> Response
         "md" | "markdown" => match fs::read_to_string(&fs_path).await {
             Ok(md) => {
                 let html = render_markdown(&md);
-                let title = fs_path.file_name().and_then(|s| s.to_str()).unwrap_or("Markdown");
-                Html(page_wrap(title, &html, &fs_path.display().to_string())).into_response()
+                let title = fs_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Markdown");
+                Html(page_wrap(title, &html)).into_response()
             }
             Err(_) => error_page(StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file"),
         },
@@ -247,7 +254,10 @@ async fn serve_file_or_markdown(_state: &AppState, fs_path: PathBuf) -> Response
             Ok(bytes) => {
                 let mime = from_path(&fs_path).first_or_octet_stream();
                 let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap());
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_str(mime.as_ref()).unwrap(),
+                );
                 (headers, bytes).into_response()
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -258,12 +268,12 @@ async fn serve_file_or_markdown(_state: &AppState, fs_path: PathBuf) -> Response
     }
 }
 
-fn page_wrap(title: &str, body_html: &str, subtitle: &str) -> String {
+fn page_wrap(title: &str, body_html: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{}</title>
+<title>md.rs | {}</title>
 <style>
   :root {{ color-scheme: dark; }}
   body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#0b0d12; color:#e5e7eb; }}
@@ -292,7 +302,7 @@ fn page_wrap(title: &str, body_html: &str, subtitle: &str) -> String {
 </body>
 </html>"#,
         html_escape(title),
-        html_escape(subtitle),
+        html_escape(title),
         body_html
     )
 }
