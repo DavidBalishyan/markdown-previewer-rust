@@ -44,7 +44,8 @@ struct Args {
     root: PathBuf,
 
     /// Address to bind (default: 127.0.0.1:3000)
-    #[arg(short = 'a', long, default_value = "127.0.0.1:3000")]
+    // #[arg(short = 'a', long, default_value = "127.0.0.1:3000")]
+    #[arg(short = 'a', long, default_value = "0.0.0.0:3000")]
     addr: String,
 }
 
